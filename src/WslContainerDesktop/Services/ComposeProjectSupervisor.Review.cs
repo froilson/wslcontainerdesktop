@@ -302,14 +302,22 @@ public sealed partial class ComposeProjectSupervisor
             if (request.Operation == ComposeLifecycleOperation.Up)
             {
                 var resources = ResourcesForPlan(effective, plan);
+                var networkNames = (await _wslc.ListNetworksAsync(ct).ConfigureAwait(false))
+                    .Select(network => network.Name).ToHashSet(StringComparer.Ordinal);
+                var volumeNames = (await _wslc.ListVolumesAsync(ct).ConfigureAwait(false))
+                    .Select(volume => volume.Name).ToHashSet(StringComparer.Ordinal);
                 foreach (var network in resources.Networks)
                     await ResourceAsync("network", network.Name, network.External,
-                        await _wslc.InspectNetworkAsync(network.Name, ct).ConfigureAwait(false), network.Driver,
+                        networkNames.Contains(network.Name)
+                            ? await _wslc.InspectNetworkAsync(network.Name, ct).ConfigureAwait(false)
+                            : null, network.Driver,
                         $"subnet: {network.Subnet ?? "engine default"}; gateway: {network.Gateway ?? "engine default"}; " +
                         $"IP range: {network.IpRange ?? "engine default"}; driver options: {network.DriverOpts.Count}; labels: {network.Labels.Count}").ConfigureAwait(false);
                 foreach (var volume in resources.Volumes)
                     await ResourceAsync("volume", volume.Name, volume.External,
-                        await _wslc.InspectVolumeAsync(volume.Name, ct).ConfigureAwait(false), volume.Driver,
+                        volumeNames.Contains(volume.Name)
+                            ? await _wslc.InspectVolumeAsync(volume.Name, ct).ConfigureAwait(false)
+                            : null, volume.Driver,
                         $"driver options: {volume.DriverOpts.Count}; labels: {volume.Labels.Count}").ConfigureAwait(false);
                 foreach (var entry in plan.Services.Where(p => p.ContainerId is not null &&
                     (p.Action == ComposeServiceAction.Recreate || p.ImageAction == ComposeImageAction.Pull)))
@@ -340,12 +348,14 @@ public sealed partial class ComposeProjectSupervisor
         var preview = safe.Create(effective, request, plan, rows);
         return new(plan, preview, Hash(string.Join("\n", evidence)));
 
-        Task ResourceAsync(string kind, string name, bool external, CommandResult result, string? driver, string declaration)
+        Task ResourceAsync(string kind, string name, bool external, CommandResult? result, string? driver, string declaration)
         {
-            var missing = ComposeResourceErrors.IsNotFound(kind, result.ErrorText);
-            if (!result.Success && (!missing || external))
-                Block(kind, external && missing ? "A required external resource is missing." : "Resource inventory is unavailable (Unknown), not empty.");
-            if (result.Success)
+            var missing = result is null;
+            if (missing && external)
+                Block(kind, "A required external resource is missing.");
+            else if (result is { Success: false })
+                Block(kind, "Resource inventory is unavailable (Unknown), not empty.");
+            if (result is { Success: true })
             {
                 using var json = JsonDocument.Parse(result.StandardOutput);
                 var root = json.RootElement;
@@ -367,11 +377,11 @@ public sealed partial class ComposeProjectSupervisor
                         Block(kind, "A resource with this name is owned by another project. Use an explicit external declaration or a different name.");
                 }
             }
-            evidence.Add($"{kind}:{name}:{result.Success}:{(result.Success ? result.StandardOutput : missing.ToString())}");
-            rows.Add(new("Project", kind, !result.Success && (!missing || external)
+            evidence.Add($"{kind}:{name}:{result?.Success}:{(result is { Success: true } ? result.StandardOutput : missing.ToString())}");
+            rows.Add(new("Project", kind, result is { Success: false } || (missing && external)
                 ? ComposeSettingDisposition.Blocked : ComposeSettingDisposition.Supported,
                 $"{name}; external: {external}; driver: {driver ?? "engine default"}; {declaration}",
-                (result.Success ? external ? "Existing external resource; never deleted." : "Existing resource retained; not destructively reconfigured." :
+                (result is { Success: true } ? external ? "Existing external resource; never deleted." : "Existing resource retained; not destructively reconfigured." :
                 missing && !external ? "Will be created after confirmation." : "Unavailable; cannot proceed.") +
                 " Driver-option and label values are withheld. Creation-only settings are not reapplied to existing resources.",
                 $"Resolved {kind} declaration"));

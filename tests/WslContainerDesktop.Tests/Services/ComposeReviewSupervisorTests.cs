@@ -384,7 +384,7 @@ public sealed class ComposeReviewSupervisorTests
         {
             fixture.Project.Volumes = [new() { Name = "data" }];
             fixture.Project.Services[0].Options.Volumes = ["data:/data"];
-            fixture.Engine.VolumeInspectionError = "raw-private-resource-error";
+            fixture.Engine.VolumeInventoryError = new IOException("raw-private-resource-error");
         }
         var review = await fixture.Supervisor.PrepareReviewAsync(fixture.Project);
         Assert.False(review.Preview.CanApply);

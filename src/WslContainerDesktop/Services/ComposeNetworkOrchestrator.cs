@@ -90,19 +90,18 @@ public sealed class ComposeNetworkOrchestrator(IWslcService wslc, ILogger logger
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 try
                 {
-                    var result = await wslc.InspectContainerAsync(request.Name!, cleanup.Token).ConfigureAwait(false);
-                    if (result.Success)
+                    var containers = await wslc.ListContainersAsync(all: true, cleanup.Token).ConfigureAwait(false);
+                    if (containers.Any(container => string.Equals(container.Name, request.Name, StringComparison.Ordinal)))
                     {
+                        var result = await wslc.InspectContainerAsync(request.Name!, cleanup.Token).ConfigureAwait(false);
+                        if (!result.Success)
+                            throw new InvalidOperationException($"Cannot inspect partial container: {result.ErrorText}");
                         var state = ContainerNetworkState.Parse(result.StandardOutput);
                         if (state.HasLabel(OperationLabel, operation))
                         {
                             RequireSuccess(await wslc.RemoveContainerAsync(state.Id, force: true, cleanup.Token)
                                 .ConfigureAwait(false), "Remove partially configured container");
                         }
-                    }
-                    else if (!ComposeResourceErrors.IsContainerNotFound(result.ErrorText))
-                    {
-                        throw new InvalidOperationException($"Cannot inspect partial container: {result.ErrorText}");
                     }
                 }
                 catch (Exception cleanupError)
