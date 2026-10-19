@@ -243,6 +243,10 @@ public sealed class ComposeNetworkOrchestratorTests
         public bool FailBuild { get; set; }
         public string? FailCreateVolume { get; set; }
         public bool CreateVolumeBeforeFailure { get; set; }
+        public string? VolumeOwnerBeforeFailure { get; set; }
+        public string? FailCreateNetwork { get; set; }
+        public bool CreateNetworkBeforeFailure { get; set; }
+        public string? NetworkOwnerBeforeFailure { get; set; }
         public string? FailRemoveVolume { get; set; }
         public Exception? VolumeInventoryError { get; set; }
         public Exception? NetworkInventoryError { get; set; }
@@ -409,7 +413,8 @@ public sealed class ComposeNetworkOrchestratorTests
                         if ((string)args[0]! == FailCreateVolume)
                         {
                             if (CreateVolumeBeforeFailure)
-                                Volumes[(string)args[0]!] = ((IReadOnlyDictionary<string, string>)args[3]!)[ComposeProject.ProjectLabel];
+                                Volumes[(string)args[0]!] = VolumeOwnerBeforeFailure ??
+                                    ((IReadOnlyDictionary<string, string>)args[3]!)[ComposeProject.ProjectLabel];
                             return Result(false, error: "fixture volume creation failed");
                         }
                         Volumes[(string)args[0]!] = ((IReadOnlyDictionary<string, string>)args[3]!)[ComposeProject.ProjectLabel];
@@ -429,6 +434,13 @@ public sealed class ComposeNetworkOrchestratorTests
                             : Result(false, error: "WSLC_E_NETWORK_NOT_FOUND");
                     case nameof(IWslcService.CreateNetworkAsync):
                         Mutations.Add("network-create:" + args[0]);
+                        if ((string)args[0]! == FailCreateNetwork)
+                        {
+                            if (CreateNetworkBeforeFailure)
+                                Networks[(string)args[0]!] = NetworkOwnerBeforeFailure ??
+                                    ((IReadOnlyDictionary<string, string>)args[3]!)[ComposeProject.ProjectLabel];
+                            return Result(false, error: "fixture network creation failed");
+                        }
                         Networks[(string)args[0]!] = ((IReadOnlyDictionary<string, string>)args[3]!)[ComposeProject.ProjectLabel];
                         return Result(true);
                     case nameof(IWslcService.RemoveNetworkAsync):

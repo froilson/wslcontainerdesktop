@@ -428,6 +428,10 @@ public sealed partial class ComposeProjectSupervisor
                 .Select(existing => existing.Name).ToHashSet(StringComparer.Ordinal);
             if (!networkNames.Contains(network.Name))
                 throw new InvalidOperationException($"Create network '{network.Name}': {created.ErrorText}");
+            var raced = await _wslc.InspectNetworkAsync(network.Name, ct).ConfigureAwait(false);
+            if (!raced.Success || !ResourceIsOwned(raced.StandardOutput, project.Name))
+                throw new InvalidOperationException(
+                    $"Network '{network.Name}' appeared during creation, but its ownership could not be verified.");
         }
 
         var volumeNames = (await _wslc.ListVolumesAsync(ct).ConfigureAwait(false))
@@ -453,6 +457,10 @@ public sealed partial class ComposeProjectSupervisor
                 .Select(existing => existing.Name).ToHashSet(StringComparer.Ordinal);
             if (!volumeNames.Contains(volume.Name))
                 throw new InvalidOperationException($"Create volume '{volume.Name}': {created.ErrorText}");
+            var raced = await _wslc.InspectVolumeAsync(volume.Name, ct).ConfigureAwait(false);
+            if (!raced.Success || !ResourceIsOwned(raced.StandardOutput, project.Name))
+                throw new InvalidOperationException(
+                    $"Volume '{volume.Name}' appeared during creation, but its ownership could not be verified.");
         }
     }
 
@@ -509,7 +517,7 @@ public sealed partial class ComposeProjectSupervisor
                 continue;
             }
 
-            if (!NetworkIsOwned(inspect.StandardOutput, project.Name))
+            if (!ResourceIsOwned(inspect.StandardOutput, project.Name))
             {
                 _logger.LogWarning("Preserving network {Network}: project ownership could not be verified.", network.Name);
                 continue;
@@ -547,7 +555,7 @@ public sealed partial class ComposeProjectSupervisor
                     failures.Add($"Inspect volume '{volume.Name}': {inspect.ErrorText}");
                     continue;
                 }
-                if (!NetworkIsOwned(inspect.StandardOutput, project.Name))
+                if (!ResourceIsOwned(inspect.StandardOutput, project.Name))
                 {
                     _logger.LogWarning("Preserving volume {Volume}: project ownership could not be verified.", volume.Name);
                     continue;
@@ -1136,7 +1144,7 @@ public sealed partial class ComposeProjectSupervisor
         }
     }
 
-    private static bool NetworkIsOwned(string json, string project)
+    private static bool ResourceIsOwned(string json, string project)
     {
         try
         {

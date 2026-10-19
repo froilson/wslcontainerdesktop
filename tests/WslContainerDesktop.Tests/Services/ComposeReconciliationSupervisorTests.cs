@@ -1125,8 +1125,37 @@ public sealed class ComposeReconciliationSupervisorTests
 
         Assert.Contains("networks", fixture.Engine.Reads);
         Assert.Contains("volumes", fixture.Engine.Reads);
-        Assert.DoesNotContain(fixture.Engine.Reads, read => read.StartsWith("network:") || read.StartsWith("volume:"));
+        Assert.Contains("volume:data", fixture.Engine.Reads);
         Assert.True(fixture.Engine.Volumes.ContainsKey("data"));
+    }
+
+    [Theory]
+    [InlineData("network")]
+    [InlineData("volume")]
+    public async Task CreationRaceDoesNotAdoptResourceOwnedByAnotherProject(string kind)
+    {
+        var fixture = new Fixture();
+        if (kind == "network")
+        {
+            fixture.Project.Networks = [new() { Name = "private" }];
+            fixture.Project.Services[0].Options.Network = "private";
+            fixture.Engine.FailCreateNetwork = "private";
+            fixture.Engine.CreateNetworkBeforeFailure = true;
+            fixture.Engine.NetworkOwnerBeforeFailure = "other";
+        }
+        else
+        {
+            fixture.Project.Volumes = [new() { Name = "data" }];
+            fixture.Project.Services[0].Options.Volumes = ["data:/data"];
+            fixture.Engine.FailCreateVolume = "data";
+            fixture.Engine.CreateVolumeBeforeFailure = true;
+            fixture.Engine.VolumeOwnerBeforeFailure = "other";
+        }
+
+        var result = await fixture.Supervisor.UpAsync(fixture.Project);
+
+        Assert.False(result.AllSucceeded);
+        Assert.DoesNotContain(fixture.Engine.Mutations, mutation => mutation.StartsWith("run:", StringComparison.Ordinal));
     }
 
     [Theory]

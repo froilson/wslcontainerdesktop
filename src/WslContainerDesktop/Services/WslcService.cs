@@ -1365,7 +1365,7 @@ public sealed class WslcService(
     public async Task<IReadOnlyList<NetworkInfo>> ListNetworksAsync(CancellationToken ct = default)
     {
         var result = await runner.RunAsync(["network", "list", "--format", "json"], ct).ConfigureAwait(false);
-        return Deserialize<NetworkInfo>(result);
+        return WslcJsonParser.ParseNetworks(result);
     }
 
     /// <summary>

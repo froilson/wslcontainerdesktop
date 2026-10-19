@@ -47,6 +47,18 @@ internal static class WslcJsonParser
         return volumes;
     }
 
+    /// <summary>Parses a successful network inventory and requires each network to have unique identities.</summary>
+    internal static IReadOnlyList<NetworkInfo> ParseNetworks(CommandResult result)
+    {
+        CheckInventoryResult(result);
+        var networks = ParseList<NetworkInfo>(result.StandardOutput);
+        if (networks.Any(n => n is null || string.IsNullOrWhiteSpace(n.Name) || string.IsNullOrWhiteSpace(n.Id)) ||
+            networks.Select(n => n.Name).Distinct(StringComparer.Ordinal).Count() != networks.Count ||
+            networks.Select(n => n.Id).Distinct(StringComparer.Ordinal).Count() != networks.Count)
+            throw new JsonException("Network inventory contains missing or duplicate identities.");
+        return networks;
+    }
+
     /// <summary>Parses a successful image inventory and requires each image to have an identity.</summary>
     internal static IReadOnlyList<ImageInfo> ParseImages(CommandResult result)
     {

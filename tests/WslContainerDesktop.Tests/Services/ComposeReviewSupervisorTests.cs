@@ -372,6 +372,7 @@ public sealed class ComposeReviewSupervisorTests
     [InlineData("driver-unknown")]
     [InlineData("owner-unknown")]
     [InlineData("unknown")]
+    [InlineData("network-inventory")]
     public async Task ResourceConflictsAreBlockedBeforeProvisioning(string conflict)
     {
         var fixture = new Fixture();
@@ -386,11 +387,16 @@ public sealed class ComposeReviewSupervisorTests
             fixture.Project.Services[0].Options.Volumes = ["data:/data"];
             fixture.Engine.VolumeInventoryError = new IOException("raw-private-resource-error");
         }
+        if (conflict == "network-inventory")
+        {
+            fixture.Engine.NetworkInventoryError = new IOException("localized-private-network-error");
+        }
         var review = await fixture.Supervisor.PrepareReviewAsync(fixture.Project);
         Assert.False(review.Preview.CanApply);
         Assert.Contains(review.Preview.Settings, row => row.Disposition == ComposeSettingDisposition.Blocked);
         Assert.Equal(ComposeReviewOutcomeKind.Blocked, (await fixture.Supervisor.ApplyReviewedAsync(review, true)).Kind);
         Assert.DoesNotContain("raw-private-resource-error", JsonSerializer.Serialize(review));
+        Assert.DoesNotContain("localized-private-network-error", JsonSerializer.Serialize(review));
         Assert.Empty(fixture.Engine.Mutations);
     }
 

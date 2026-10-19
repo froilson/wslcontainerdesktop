@@ -14,6 +14,10 @@ where the signed MSIX and installation steps live.
 
 ### Fixed
 
+- **Compose recognizes local paths as bind mounts when long-form mounts omit `type`.**
+  Resource discovery no longer depends on English engine error messages, so localized
+  Windows installations can provision missing networks and volumes. Failed inventories
+  block deployment, and resources appearing during a create race must have verified project ownership.
 - **Docker Hub login corrects uppercase and full-width usernames** before sending them to
   the engine, including when adding a registry and logging in immediately. Other registries
   preserve username case and characters. Authorization-header errors show credential guidance.
