@@ -1110,9 +1110,57 @@ public sealed class ComposeReconciliationSupervisorTests
         Assert.DoesNotContain("volume-create:data", fixture.Engine.Mutations);
     }
 
+    [Fact]
+    public async Task ResourceDiscoveryUsesStructuredInventoryAndToleratesCreationRace()
+    {
+        var fixture = new Fixture();
+        fixture.Project.Networks = [new() { Name = "private" }];
+        fixture.Project.Services[0].Options.Network = "private";
+        fixture.Project.Volumes = [new() { Name = "data" }];
+        fixture.Project.Services[0].Options.Volumes = ["data:/data"];
+        fixture.Engine.FailCreateVolume = "data";
+        fixture.Engine.CreateVolumeBeforeFailure = true;
+
+        await UpSuccessfullyAsync(fixture);
+
+        Assert.Contains("networks", fixture.Engine.Reads);
+        Assert.Contains("volumes", fixture.Engine.Reads);
+        Assert.Contains("volume:data", fixture.Engine.Reads);
+        Assert.True(fixture.Engine.Volumes.ContainsKey("data"));
+    }
+
+    [Theory]
+    [InlineData("network")]
+    [InlineData("volume")]
+    public async Task CreationRaceDoesNotAdoptResourceOwnedByAnotherProject(string kind)
+    {
+        var fixture = new Fixture();
+        if (kind == "network")
+        {
+            fixture.Project.Networks = [new() { Name = "private" }];
+            fixture.Project.Services[0].Options.Network = "private";
+            fixture.Engine.FailCreateNetwork = "private";
+            fixture.Engine.CreateNetworkBeforeFailure = true;
+            fixture.Engine.NetworkOwnerBeforeFailure = "other";
+        }
+        else
+        {
+            fixture.Project.Volumes = [new() { Name = "data" }];
+            fixture.Project.Services[0].Options.Volumes = ["data:/data"];
+            fixture.Engine.FailCreateVolume = "data";
+            fixture.Engine.CreateVolumeBeforeFailure = true;
+            fixture.Engine.VolumeOwnerBeforeFailure = "other";
+        }
+
+        var result = await fixture.Supervisor.UpAsync(fixture.Project);
+
+        Assert.False(result.AllSucceeded);
+        Assert.DoesNotContain(fixture.Engine.Mutations, mutation => mutation.StartsWith("run:", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("create")]
-    [InlineData("inspect")]
+    [InlineData("inventory")]
     [InlineData("external")]
     public async Task VolumePreflightFailurePreservesEveryRunningService(string failure)
     {
@@ -1124,7 +1172,7 @@ public sealed class ComposeReconciliationSupervisorTests
         fixture.Project.Volumes = [new() { Name = "data", External = failure == "external" }];
         worker.Options.Volumes = ["data:/data"];
         if (failure == "create") fixture.Engine.FailCreateVolume = "data";
-        if (failure == "inspect") fixture.Engine.VolumeInspectionError = "WSLC_E_ACCESS_DENIED";
+        if (failure == "inventory") fixture.Engine.VolumeInventoryError = new IOException("fixture inventory failed");
         fixture.Engine.Mutations.Clear();
 
         Assert.False((await fixture.Supervisor.UpAsync(fixture.Project)).AllSucceeded);

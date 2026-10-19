@@ -331,15 +331,7 @@ internal sealed class ComposeRuntimeLease : IAsyncDisposable
         WslcJsonParser.ParseVolumes(await runner.RunAsync(["volume", "list", "--format", "json"], ct));
 
     internal static IReadOnlyList<NetworkInfo> ParseNetworks(CommandResult result)
-    {
-        Require(result, "Authoritative network inventory; absence is unknown on failure");
-        var values = WslcJsonParser.ParseList<NetworkInfo>(result.StandardOutput);
-        if (values.Any(n => n is null || string.IsNullOrWhiteSpace(n.Name) || string.IsNullOrWhiteSpace(n.Id)) ||
-            values.Select(n => n.Name).Distinct(StringComparer.Ordinal).Count() != values.Count ||
-            values.Select(n => n.Id).Distinct(StringComparer.Ordinal).Count() != values.Count)
-            throw new JsonException("Network inventory contains missing or duplicate identities.");
-        return values;
-    }
+        => WslcJsonParser.ParseNetworks(result);
     private static bool IsDigest(string value) => value.Length == 64 && value.All(Uri.IsHexDigit);
     private static JsonElement Object(JsonElement root) =>
         root.ValueKind == JsonValueKind.Array && root.GetArrayLength() == 1 ? root[0] : root;

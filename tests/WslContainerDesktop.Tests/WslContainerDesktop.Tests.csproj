@@ -217,7 +217,6 @@
     <Compile Include="..\..\src\WslContainerDesktop\Services\EngineEventStream.cs" Link="Services\EngineEventStream.cs" Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'" />
     <Compile Include="..\..\src\WslContainerDesktop\Services\WslcSettingsFileService.cs" Link="Services\WslcSettingsFileService.cs" />
     <Compile Include="..\..\src\WslContainerDesktop\Services\OpenWebUiPlanner.cs" Link="Services\OpenWebUiPlanner.cs" />
-    <Compile Include="..\..\src\WslContainerDesktop\Services\ComposeResourceErrors.cs" Link="Services\ComposeResourceErrors.cs" />
     <Compile Include="..\..\src\WslContainerDesktop\Services\DeploymentConflictResolver.cs" Link="Services\DeploymentConflictResolver.cs" />
     <Compile Include="..\..\src\WslContainerDesktop\Services\IComposeProjectStore.cs" Link="Services\IComposeProjectStore.cs" />
     <Compile Include="..\..\src\WslContainerDesktop\Services\ComposeProjectStore.cs" Link="Services\ComposeProjectStore.cs" />

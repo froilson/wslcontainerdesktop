@@ -1037,6 +1037,28 @@ public sealed class ComposeFileGraphTests
         Assert.Equal(path + ":/data", Assert.Single(service.Options.Volumes));
     }
 
+    [Fact]
+    public void LongFormLocalPathWithoutTypeIsABindMount()
+    {
+        using var files = new Fixture();
+        var service = Assert.Single(files.Parse("""
+            services:
+              prometheus:
+                image: fixture
+                volumes:
+                  - source: ./resources/config/prometheus.yml
+                    target: /etc/prometheus/prometheus.yml
+            """).Services);
+
+        var mount = Assert.Single(service.Options.Mounts);
+        var source = Path.GetFullPath(files.PathOf("resources/config/prometheus.yml"));
+        Assert.Equal("bind", mount.Type);
+        Assert.Equal(source, mount.Source);
+        Assert.Equal(
+            $"type=bind,source={source},target=/etc/prometheus/prometheus.yml",
+            mount.ToArgument());
+    }
+
     [Theory]
     [InlineData(@"C:synthetic-private-input")]
     [InlineData(@"\synthetic-private-input")]

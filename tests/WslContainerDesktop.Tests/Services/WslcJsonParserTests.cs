@@ -32,12 +32,38 @@ public sealed class WslcJsonParserTests
     public void RuntimeInventories_DistinguishSuccessfulEmptyFromFailedCommand(string output)
     {
         Assert.Empty(WslcJsonParser.ParseVolumes(new() { StandardOutput = output }));
+        Assert.Empty(WslcJsonParser.ParseNetworks(new() { StandardOutput = output }));
         Assert.Empty(WslcJsonParser.ParseImages(new() { StandardOutput = output }));
         var failed = new CommandResult { ExitCode = 1, StandardOutput = output, StandardError = "synthetic secret" };
         Assert.DoesNotContain("synthetic secret", Assert.Throws<InvalidOperationException>(
             () => WslcJsonParser.ParseVolumes(failed)).Message);
+        Assert.Throws<InvalidOperationException>(() => WslcJsonParser.ParseNetworks(failed));
         Assert.Throws<InvalidOperationException>(() => WslcJsonParser.ParseImages(failed));
     }
+
+    [Fact]
+    public void NetworkInventory_ParsesStructuredRows()
+    {
+        var networks = WslcJsonParser.ParseNetworks(new()
+        {
+            StandardOutput = """[{"Id":"network-1","Name":"backend","Driver":"bridge"}]""",
+        });
+
+        var network = Assert.Single(networks);
+        Assert.Equal("network-1", network.Id);
+        Assert.Equal("backend", network.Name);
+        Assert.Equal("bridge", network.Driver);
+    }
+
+    [Theory]
+    [InlineData("[null]")]
+    [InlineData("[{}]")]
+    [InlineData("""[{"Name":"missing-id"}]""")]
+    [InlineData("""[{"Name":"same","Id":"1"},{"Name":"same","Id":"2"}]""")]
+    [InlineData("""[{"Name":"one","Id":"same"},{"Name":"two","Id":"same"}]""")]
+    [InlineData("""{"Name":"valid","Id":"1"} invalid""")]
+    public void NetworkInventory_RejectsPartialOrMissingIdentity(string output) =>
+        Assert.ThrowsAny<JsonException>(() => WslcJsonParser.ParseNetworks(new() { StandardOutput = output }));
 
     [Theory]
     [InlineData("[null]")]

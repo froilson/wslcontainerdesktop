@@ -249,6 +249,10 @@ public sealed class ComposeRuntimeTests
                 inventoryReads++;
                 return Task.FromResult<IReadOnlyList<ContainerInfo>>([]);
             }
+            if (method.Name == nameof(IWslcService.ListNetworksAsync))
+                return Task.FromResult<IReadOnlyList<NetworkInfo>>([]);
+            if (method.Name == nameof(IWslcService.ListVolumesAsync))
+                return Task.FromResult<IReadOnlyList<VolumeInfo>>([]);
             throw new InvalidOperationException($"Unexpected engine access {method.Name}.");
         });
         var settings = NetworkTestProxy.Create<ISettingsService>((method, _) =>

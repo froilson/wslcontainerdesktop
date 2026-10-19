@@ -185,6 +185,19 @@ public sealed class WslcServiceNonInteractiveTests : IDisposable
     }
 
     [Fact]
+    public async Task NetworkInventory_FailedCommandThrowsInsteadOfReturningEmptyList()
+    {
+        var service = Service(_stub.Fail);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ListNetworksAsync().WaitAsync(Guard));
+
+        Assert.Contains("Resource inventory failed", error.Message);
+        Assert.DoesNotContain("Volume not found", error.Message);
+        Assert.Equal(["network list --format json"], _stub.Invocations(_stub.Fail));
+    }
+
+    [Fact]
     public void StripTag_KeepsRegistryPorts()
     {
         Assert.Equal("localhost:5000/team/app", WslcService.StripTag("localhost:5000/team/app:1.0"));

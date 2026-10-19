@@ -45,10 +45,11 @@ public sealed partial class ComposeProjectSupervisor
     private async Task CleanupPartialRunAsync(string name, string operation)
     {
         using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var containers = await _wslc.ListContainersAsync(all: true, cleanup.Token).ConfigureAwait(false);
+        if (!containers.Any(container => string.Equals(container.Name, name, StringComparison.Ordinal))) return;
         var result = await _wslc.InspectContainerAsync(name, cleanup.Token).ConfigureAwait(false);
         if (!result.Success)
         {
-            if (ComposeResourceErrors.IsContainerNotFound(result.ErrorText)) return;
             throw new InvalidOperationException($"Cannot inspect a partial Compose run: {result.ErrorText}");
         }
         var state = ContainerNetworkState.Parse(result.StandardOutput);

@@ -1,4 +1,5 @@
 ## .NET / build output
+.dotnet/
 bin/
 obj/
 [Dd]ebug/

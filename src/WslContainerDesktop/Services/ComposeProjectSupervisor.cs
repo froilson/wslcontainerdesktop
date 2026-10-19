@@ -396,18 +396,18 @@ public sealed partial class ComposeProjectSupervisor
     /// </summary>
     private async Task ProvisionResourcesAsync(ComposeProject project, CancellationToken ct)
     {
+        var networkNames = (await _wslc.ListNetworksAsync(ct).ConfigureAwait(false))
+            .Select(network => network.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var network in project.Networks.Where(n => !string.IsNullOrWhiteSpace(n.Name)))
         {
-            var existing = await _wslc.InspectNetworkAsync(network.Name, ct).ConfigureAwait(false);
-            if (existing.Success)
+            if (networkNames.Contains(network.Name))
             {
                 continue;
             }
 
-            if (network.External ||
-                !ComposeResourceErrors.IsNetworkNotFound(existing.ErrorText))
+            if (network.External)
             {
-                throw new InvalidOperationException($"Network '{network.Name}': {existing.ErrorText}");
+                throw new InvalidOperationException($"Required external network '{network.Name}' is missing.");
             }
 
             var labels = new Dictionary<string, string>(network.Labels, StringComparer.Ordinal)
@@ -417,25 +417,50 @@ public sealed partial class ComposeProjectSupervisor
             var created = await _wslc.CreateNetworkAsync(network.Name, network.Driver, network.DriverOpts, labels,
                 network.Subnet, network.Gateway, network.IpRange, ct, network.Internal)
                 .ConfigureAwait(false);
-            if (!created.Success)
+            if (created.Success)
             {
-                throw new InvalidOperationException($"Create network '{network.Name}': {created.ErrorText}");
+                networkNames.Add(network.Name);
+                continue;
             }
+
+            // A concurrent deployment can create the resource after the inventory read.
+            networkNames = (await _wslc.ListNetworksAsync(ct).ConfigureAwait(false))
+                .Select(existing => existing.Name).ToHashSet(StringComparer.Ordinal);
+            if (!networkNames.Contains(network.Name))
+                throw new InvalidOperationException($"Create network '{network.Name}': {created.ErrorText}");
+            var raced = await _wslc.InspectNetworkAsync(network.Name, ct).ConfigureAwait(false);
+            if (!raced.Success || !ResourceIsOwned(raced.StandardOutput, project.Name))
+                throw new InvalidOperationException(
+                    $"Network '{network.Name}' appeared during creation, but its ownership could not be verified.");
         }
 
+        var volumeNames = (await _wslc.ListVolumesAsync(ct).ConfigureAwait(false))
+            .Select(volume => volume.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var volume in project.Volumes.Where(v => !string.IsNullOrWhiteSpace(v.Name)))
         {
-            var existing = await _wslc.InspectVolumeAsync(volume.Name, ct).ConfigureAwait(false);
-            if (existing.Success) continue;
-            if (volume.External || !ComposeResourceErrors.IsVolumeNotFound(existing.ErrorText))
-                throw new InvalidOperationException($"Volume '{volume.Name}': {existing.ErrorText}");
+            if (volumeNames.Contains(volume.Name)) continue;
+            if (volume.External)
+                throw new InvalidOperationException($"Required external volume '{volume.Name}' is missing.");
             var labels = new Dictionary<string, string>(volume.Labels, StringComparer.Ordinal)
             {
                 [ComposeProject.ProjectLabel] = project.Name,
             };
             var created = await _wslc.CreateVolumeAsync(volume.Name, volume.Driver, volume.DriverOpts, labels, ct).ConfigureAwait(false);
-            if (!created.Success)
+            if (created.Success)
+            {
+                volumeNames.Add(volume.Name);
+                continue;
+            }
+
+            // A concurrent deployment can create the resource after the inventory read.
+            volumeNames = (await _wslc.ListVolumesAsync(ct).ConfigureAwait(false))
+                .Select(existing => existing.Name).ToHashSet(StringComparer.Ordinal);
+            if (!volumeNames.Contains(volume.Name))
                 throw new InvalidOperationException($"Create volume '{volume.Name}': {created.ErrorText}");
+            var raced = await _wslc.InspectVolumeAsync(volume.Name, ct).ConfigureAwait(false);
+            if (!raced.Success || !ResourceIsOwned(raced.StandardOutput, project.Name))
+                throw new InvalidOperationException(
+                    $"Volume '{volume.Name}' appeared during creation, but its ownership could not be verified.");
         }
     }
 
@@ -480,21 +505,19 @@ public sealed partial class ComposeProjectSupervisor
         // Failures are collected rather than thrown immediately: aborting here would silently skip
         // an explicitly requested volume deletion further down.
         var failures = new List<string>();
+        var networkNames = (await _wslc.ListNetworksAsync(ct).ConfigureAwait(false))
+            .Select(network => network.Name).ToHashSet(StringComparer.Ordinal);
         foreach (var network in project.Networks.Where(n => !n.External && !string.IsNullOrWhiteSpace(n.Name)))
         {
+            if (!networkNames.Contains(network.Name)) continue;
             var inspect = await _wslc.InspectNetworkAsync(network.Name, ct).ConfigureAwait(false);
             if (!inspect.Success)
             {
-                if (ComposeResourceErrors.IsNetworkNotFound(inspect.ErrorText))
-                {
-                    continue;
-                }
-
                 failures.Add($"Inspect network '{network.Name}': {inspect.ErrorText}");
                 continue;
             }
 
-            if (!NetworkIsOwned(inspect.StandardOutput, project.Name))
+            if (!ResourceIsOwned(inspect.StandardOutput, project.Name))
             {
                 _logger.LogWarning("Preserving network {Network}: project ownership could not be verified.", network.Name);
                 continue;
@@ -521,17 +544,18 @@ public sealed partial class ComposeProjectSupervisor
 
         if (removeVolumes)
         {
+            var volumeNames = (await _wslc.ListVolumesAsync(ct).ConfigureAwait(false))
+                .Select(volume => volume.Name).ToHashSet(StringComparer.Ordinal);
             foreach (var volume in project.Volumes.Where(v => !v.External && !string.IsNullOrWhiteSpace(v.Name)))
             {
+                if (!volumeNames.Contains(volume.Name)) continue;
                 var inspect = await _wslc.InspectVolumeAsync(volume.Name, ct).ConfigureAwait(false);
-                if (!inspect.Success && ComposeResourceErrors.IsVolumeNotFound(inspect.ErrorText))
-                    continue;
                 if (!inspect.Success)
                 {
                     failures.Add($"Inspect volume '{volume.Name}': {inspect.ErrorText}");
                     continue;
                 }
-                if (!NetworkIsOwned(inspect.StandardOutput, project.Name))
+                if (!ResourceIsOwned(inspect.StandardOutput, project.Name))
                 {
                     _logger.LogWarning("Preserving volume {Volume}: project ownership could not be verified.", volume.Name);
                     continue;
@@ -1120,7 +1144,7 @@ public sealed partial class ComposeProjectSupervisor
         }
     }
 
-    private static bool NetworkIsOwned(string json, string project)
+    private static bool ResourceIsOwned(string json, string project)
     {
         try
         {

@@ -982,13 +982,13 @@ public static partial class ComposeImporter
                         break;
                     }
 
+                    var source = map.Scalar("source")?.Trim();
                     var type = map.Scalar("type")?.Trim();
                     if (string.IsNullOrWhiteSpace(type))
                     {
-                        type = "volume";
+                        type = !string.IsNullOrWhiteSpace(source) && IsBindSource(source) ? "bind" : "volume";
                     }
 
-                    var source = map.Scalar("source")?.Trim();
                     if (!string.IsNullOrWhiteSpace(source) && type.Equals("bind", StringComparison.OrdinalIgnoreCase))
                     {
                         source = ResolvePath(source, baseDirectory);
